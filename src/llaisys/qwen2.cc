@@ -5,13 +5,15 @@
 #include "../models/qwen2/model.hpp"
 #include "../utils.hpp"
 
+#include <cstdio>
+#include <exception>
 #include <memory>
 #include <string>
 #include <vector>
 
 struct LlaisysQwen2Model {
     std::unique_ptr<llaisys::models::Qwen2Model> model;
-    LlaisysQwen2Weights weights;
+    LlaisysQwen2Weights weights{};
     std::vector<std::unique_ptr<LlaisysTensor>> tensor_handles;
 };
 
@@ -87,6 +89,14 @@ void destroy_weight_arrays(LlaisysQwen2Weights &weights) {
     delete[] weights.mlp_down_w;
 }
 
+void report_error(const char *function, const char *message) noexcept {
+    std::fprintf(stderr, "[ERROR] %s: %s\n", function, message);
+}
+
+void report_unknown_error(const char *function) noexcept {
+    report_error(function, "unknown C++ exception");
+}
+
 } // namespace
 
 __C {
@@ -94,15 +104,37 @@ __C {
                                                 llaisysDeviceType_t device,
                                                 int *device_ids,
                                                 int ndevice) {
-        CHECK_ARGUMENT(meta != nullptr, "Qwen2 metadata must not be null");
-        CHECK_ARGUMENT(ndevice == 1 || (device == LLAISYS_DEVICE_CPU && ndevice == 0),
-                       "Qwen2 currently supports one device");
-        const int device_id = ndevice == 0 ? 0 : device_ids[0];
-        auto *result = new LlaisysQwen2Model;
-        result->model =
-            std::make_unique<llaisys::models::Qwen2Model>(*meta, device, device_id);
-        initialize_weight_handles(result);
-        return result;
+        LlaisysQwen2Model *result = nullptr;
+        try {
+            CHECK_ARGUMENT(meta != nullptr, "Qwen2 metadata must not be null");
+            CHECK_ARGUMENT(
+                ndevice == 1
+                    || (device == LLAISYS_DEVICE_CPU && ndevice == 0),
+                "Qwen2 currently supports one device");
+            CHECK_ARGUMENT(ndevice == 0 || device_ids != nullptr,
+                           "Qwen2 device IDs must not be null");
+            const int device_id = ndevice == 0 ? 0 : device_ids[0];
+            result = new LlaisysQwen2Model;
+            result->model =
+                std::make_unique<llaisys::models::Qwen2Model>(
+                    *meta, device, device_id);
+            initialize_weight_handles(result);
+            return result;
+        } catch (const std::exception &error) {
+            if (result != nullptr) {
+                destroy_weight_arrays(result->weights);
+                delete result;
+            }
+            report_error("llaisysQwen2ModelCreate", error.what());
+            return nullptr;
+        } catch (...) {
+            if (result != nullptr) {
+                destroy_weight_arrays(result->weights);
+                delete result;
+            }
+            report_unknown_error("llaisysQwen2ModelCreate");
+            return nullptr;
+        }
     }
 
     void llaisysQwen2ModelDestroy(LlaisysQwen2Model *model) {
@@ -114,28 +146,62 @@ __C {
     }
 
     LlaisysQwen2Weights *llaisysQwen2ModelWeights(LlaisysQwen2Model *model) {
-        CHECK_ARGUMENT(model != nullptr, "Qwen2 model must not be null");
-        return &model->weights;
+        try {
+            CHECK_ARGUMENT(model != nullptr, "Qwen2 model must not be null");
+            return &model->weights;
+        } catch (const std::exception &error) {
+            report_error("llaisysQwen2ModelWeights", error.what());
+            return nullptr;
+        } catch (...) {
+            report_unknown_error("llaisysQwen2ModelWeights");
+            return nullptr;
+        }
     }
 
-    void llaisysQwen2ModelLoadWeight(LlaisysQwen2Model *model,
-                                     const char *name,
-                                     const void *data,
-                                     size_t nbytes) {
-        CHECK_ARGUMENT(model != nullptr, "Qwen2 model must not be null");
-        CHECK_ARGUMENT(name != nullptr, "Qwen2 weight name must not be null");
-        model->model->loadWeight(std::string(name), data, nbytes);
+    uint8_t llaisysQwen2ModelLoadWeight(LlaisysQwen2Model *model,
+                                        const char *name,
+                                        const void *data,
+                                        size_t nbytes) {
+        try {
+            CHECK_ARGUMENT(model != nullptr, "Qwen2 model must not be null");
+            CHECK_ARGUMENT(name != nullptr, "Qwen2 weight name must not be null");
+            model->model->loadWeight(std::string(name), data, nbytes);
+            return 1;
+        } catch (const std::exception &error) {
+            report_error("llaisysQwen2ModelLoadWeight", error.what());
+            return 0;
+        } catch (...) {
+            report_unknown_error("llaisysQwen2ModelLoadWeight");
+            return 0;
+        }
     }
 
-    void llaisysQwen2ModelReset(LlaisysQwen2Model *model) {
-        CHECK_ARGUMENT(model != nullptr, "Qwen2 model must not be null");
-        model->model->reset();
+    uint8_t llaisysQwen2ModelReset(LlaisysQwen2Model *model) {
+        try {
+            CHECK_ARGUMENT(model != nullptr, "Qwen2 model must not be null");
+            model->model->reset();
+            return 1;
+        } catch (const std::exception &error) {
+            report_error("llaisysQwen2ModelReset", error.what());
+            return 0;
+        } catch (...) {
+            report_unknown_error("llaisysQwen2ModelReset");
+            return 0;
+        }
     }
 
     int64_t llaisysQwen2ModelInfer(LlaisysQwen2Model *model,
                                    int64_t *token_ids,
                                    size_t ntoken) {
-        CHECK_ARGUMENT(model != nullptr, "Qwen2 model must not be null");
-        return model->model->infer(token_ids, ntoken);
+        try {
+            CHECK_ARGUMENT(model != nullptr, "Qwen2 model must not be null");
+            return model->model->infer(token_ids, ntoken);
+        } catch (const std::exception &error) {
+            report_error("llaisysQwen2ModelInfer", error.what());
+            return -1;
+        } catch (...) {
+            report_unknown_error("llaisysQwen2ModelInfer");
+            return -1;
+        }
     }
 }
