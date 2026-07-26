@@ -37,6 +37,9 @@ target("llaisys-device")
     set_kind("static")
     add_deps("llaisys-utils")
     add_deps("llaisys-device-cpu")
+    if has_config("nv-gpu") then
+        add_deps("llaisys-device-nvidia")
+    end
 
     set_languages("cxx17")
     set_warnings("all", "error")
@@ -83,6 +86,9 @@ target_end()
 target("llaisys-ops")
     set_kind("static")
     add_deps("llaisys-ops-cpu")
+    if has_config("nv-gpu") then
+        add_deps("llaisys-ops-nvidia")
+    end
 
     set_languages("cxx17")
     set_warnings("all", "error")
@@ -105,7 +111,11 @@ target("llaisys")
 
     set_languages("cxx17")
     set_warnings("all", "error")
+    if has_config("nv-gpu") then
+        add_links("cudart")
+    end
     add_files("src/llaisys/*.cc")
+    add_files("src/models/*/*.cpp")
     set_installdir(".")
 
     
@@ -117,6 +127,10 @@ target("llaisys")
         end
         if is_plat("linux") then
             os.cp("lib/*.so", "python/llaisys/libllaisys/")
+        end
+        if is_plat("macosx") then
+            os.cp("lib/libllaisys.dylib", "python/llaisys/libllaisys/llaisys.dylib")
+            os.execv("codesign", {"--force", "--sign", "-", "python/llaisys/libllaisys/llaisys.dylib"})
         end
     end)
 target_end()
